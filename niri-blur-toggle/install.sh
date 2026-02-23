@@ -6,7 +6,7 @@ set -euo pipefail
 # ==========================================
 # 变量定义
 # ==========================================
-RAW_URL="https://raw.githubusercontent.com/SHORiN-KiWATA/Shorin-ArchLinux-Guide/refs/heads/main/dotfiles/.local/bin/niri-blur-toggle"
+RAW_URL="https://raw.githubusercontent.com/SHORiN-KiWATA/install.sh/refs/heads/main/niri-blur-toggle/niri-blur-toggle"
 DEST_DIR="${HOME}/.local/bin"
 DEST_FILE="${DEST_DIR}/niri-blur-toggle"
 
