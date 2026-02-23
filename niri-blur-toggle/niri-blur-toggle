@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+
+# 开启 Bash 严格模式
+set -euo pipefail
+
+# ==========================================
+# 全局变量定义
+# ==========================================
+NIRI_BIN="/usr/bin/niri"
+NIRI_BAK="/usr/bin/niri.bak"
+REPO_URL="https://github.com/niri-wm/niri.git"
+BRANCH="wip/branch"
+QUICKSAVE_BIN="${HOME}/.local/bin/quicksave"
+
+# 使用 XDG 规范的缓存目录
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
+BUILD_DIR="${CACHE_DIR}/niri-blur-build"
+
+# 配置与状态持久化相关
+CONFIG_FILE="${HOME}/.config/niri/config.kdl"
+BLUR_CACHE_FILE="${CACHE_DIR}/niri_blur_user_config.kdl"
+MARKER_START="// --- NIRI BLUR TOGGLE AUTO-EDIT START ---"
+MARKER_END="// --- NIRI BLUR TOGGLE AUTO-EDIT END ---"
+
+# 获取脚本运行参数 (默认值为 toggle)
+COMMAND="${1:-toggle}"
+
+# 动态检测 quicksave 是否存在且可执行
+HAS_QUICKSAVE=false
+if [[ -x "$QUICKSAVE_BIN" ]]; then
+    HAS_QUICKSAVE=true
+fi
+
+# ==========================================
+# 终端输出美化函数
+# ==========================================
+info()    { echo -e "\e[1;34m[*]\e[0m $1"; }
+success() { echo -e "\e[1;32m[+]\e[0m $1"; }
+warning() { echo -e "\e[1;33m[!]\e[0m $1"; }
+error()   { echo -e "\e[1;31m[-]\e[0m $1"; exit 1; }
+bold()    { echo -e "\e[1m$1\e[0m"; }
+
+# ==========================================
+# 自动化配置函数 (带状态记忆)
+# ==========================================
+remove_blur_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        info "清理 config.kdl 中的测试版 Blur 配置..."
+        
+        # [记忆功能] 在删除前，提取标记块内容并保存到缓存文件
+        sed -n "\@^${MARKER_START}\$@,\@^${MARKER_END}\$@p" "$CONFIG_FILE" > "$BLUR_CACHE_FILE"
+        
+        # 使用 @ 作为定界符，安全删除标记块
+        sed -i "\@^${MARKER_START}\$@,\@^${MARKER_END}\$@d" "$CONFIG_FILE"
+    fi
+}
+
+add_blur_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        info "向 config.kdl 注入 Blur 配置..."
+        remove_blur_config # 注入前清理，保证幂等性
+        
+        # [记忆功能] 判断是否有上次保存过的配置
+        if [[ -f "$BLUR_CACHE_FILE" && -s "$BLUR_CACHE_FILE" ]]; then
+            info "检测到你之前微调过的 Blur 配置，正在恢复..."
+            cat "$BLUR_CACHE_FILE" >> "$CONFIG_FILE"
+        else
+            info "应用默认的 Blur 配置模板..."
+            cat >> "$CONFIG_FILE" <<EOF
+${MARKER_START}
+blur {
+    passes 3
+    offset 2
+    noise 0.02
+    saturation 1.5
+}
+
+window-rule {
+    background-effect {
+        xray true
+        blur true
+    }
+}
+
+window-rule {
+    match is-floating=true
+    background-effect {
+        xray false
+        blur true
+    }
+}
+${MARKER_END}
+EOF
+        fi
+    fi
+}
+
+# ==========================================
+# 智能编译函数 (Git 状态对比 + 产物缓存复用)
+# ==========================================
+build_niri() {
+    if ! command -v cargo &> /dev/null; then
+        warning "未检测到 rust/cargo，正在通过 pacman 安装..."
+        sudo pacman -S --needed --noconfirm cargo rust git
+    fi
+
+    mkdir -p "$CACHE_DIR"
+    if [[ -d "$BUILD_DIR" ]]; then
+        info "发现已有源码缓存，正在检查上游更新..."
+        cd "$BUILD_DIR"
+        
+        # 获取本地当前的 Commit Hash
+        LOCAL_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "none")
+        
+        # 拉取远程最新状态
+        git fetch origin "$BRANCH"
+        REMOTE_COMMIT=$(git rev-parse origin/"$BRANCH")
+        
+        # 核心逻辑：如果远程与本地 Hash 一致，且编译产物还在，则直接跳过编译！
+        if [[ "$LOCAL_COMMIT" == "$REMOTE_COMMIT" && -f "./target/release/niri" ]]; then
+            success "上游源码无更新，且本地二进制文件完好，直接复用跳过编译！"
+            return 0
+        else
+            info "检测到上游更新或本地编译产物缺失，正在同步最新代码..."
+            git reset --hard "origin/$BRANCH"
+        fi
+    else
+        info "克隆源码仓库到缓存区中..."
+        git clone -b "$BRANCH" "$REPO_URL" "$BUILD_DIR"
+        cd "$BUILD_DIR"
+    fi
+
+    info "开始编译 Release 版本 (这可能需要几分钟)..."
+    cargo build --release
+
+    if [[ ! -f "./target/release/niri" ]]; then
+        error "编译失败，未找到生成的可执行文件！"
+    fi
+}
+
+# ==========================================
+# 主流程：Update 模式
+# ==========================================
+if [[ "$COMMAND" == "update" ]]; then
+    if [[ ! -f "$NIRI_BAK" ]]; then
+        error "当前系统处于正式版状态。请直接运行不带参数的脚本进行 Toggle 切换。"
+    fi
+
+    echo -e "\n\e[1;36m====================================================\e[0m"
+    bold "  Niri 测试版热更新 (wip/branch)"
+    echo -e "\e[1;36m====================================================\e[0m\n"
+    
+    warning "这将会拉取最新源码并检查是否需要重新编译。"
+    warning "操作完成后将自动重启会话，请保存工作！\n"
+    read -p "$(bold "确认执行更新？[y/N] ")" response
+    if [[ "${response,,}" != "y" && "${response,,}" != "yes" ]]; then
+        info "更新已取消。"
+        exit 0
+    fi
+
+    if [[ "$HAS_QUICKSAVE" == true ]]; then
+        info "运行 quicksave 创建 Btrfs 快照..."
+        "$QUICKSAVE_BIN" -d "quicksave-niri-blur-toggle-update"
+    fi
+
+    # 调用智能编译函数
+    build_niri
+
+    info "替换二进制文件中..."
+    sudo rm -f "$NIRI_BIN"
+    sudo cp ./target/release/niri "$NIRI_BIN"
+    success "Blur 测试版更新完成！"
+
+# ==========================================
+# 主流程：Toggle 切换模式
+# ==========================================
+else
+    if [[ -f "$NIRI_BAK" ]]; then
+        CURRENT_STATE="BLUR_TEST"
+    else
+        CURRENT_STATE="STABLE"
+    fi
+
+    echo -e "\n\e[1;36m====================================================\e[0m"
+    bold "  Niri 版本切换工具 (Stable <-> Blur Test)"
+    echo -e "\e[1;36m====================================================\e[0m\n"
+
+    bold "即将执行以下操作："
+    
+    # 动态显示 quicksave 步骤
+    if [[ "$HAS_QUICKSAVE" == true ]]; then
+        echo "  0. [快照] 运行 quicksave 创建 Btrfs 系统快照"
+    fi
+
+    if [[ "$CURRENT_STATE" == "BLUR_TEST" ]]; then
+        echo "  1. [恢复] 从备份还原官方正式版 Niri"
+        echo "  2. [清理] 移除 Blur 规则 (已自动保存当前参数)"
+    else
+        echo "  1. [检查] 获取最新 wip/branch 源码，智能跳过或执行编译"
+        echo "  2. [配置] 注入 Blur 规则 (自动恢复你的历史微调)"
+    fi
+
+    echo ""
+    echo -e "\e[1;41;37m ⚠️ 警告 \e[0m"
+    echo -e "\e[1;31m操作完成后，脚本将立刻向 Niri 发送退出指令！\e[0m"
+    echo -e "\e[1;31m所有未保存的工作将丢失，请确保已保存重要文件。\e[0m"
+    echo ""
+
+    read -p "$(bold "是否确认执行上述操作并自动重启会话？[y/N] ")" response
+    if [[ "${response,,}" != "y" && "${response,,}" != "yes" ]]; then
+        info "操作已取消，系统未做任何修改。"
+        exit 0
+    fi
+
+    echo ""
+    info "开始执行操作..."
+
+    # 执行 quicksave
+    if [[ "$HAS_QUICKSAVE" == true ]]; then
+        info "运行 quicksave 创建 Btrfs 快照..."
+        "$QUICKSAVE_BIN" -d "quicksave-niri-blur-toggle"
+    fi
+
+    if [[ "$CURRENT_STATE" == "BLUR_TEST" ]]; then
+        # 恢复正式版
+        sudo mv "$NIRI_BAK" "$NIRI_BIN"
+        remove_blur_config
+        success "官方正式版恢复完成！"
+        warning "请记得手动修改 config.kdl 以调整壁纸模糊相关的启动项。"
+    else
+        # 安装测试版
+        build_niri
+        info "替换二进制文件中..."
+        sudo mv "$NIRI_BIN" "$NIRI_BAK"
+        sudo cp ./target/release/niri "$NIRI_BIN"
+        add_blur_config
+        success "Blur 测试版替换并安装完成！"
+        warning "请记得手动修改 config.kdl 以调整壁纸模糊相关的启动项。"
+    fi
+fi
+
+# ==========================================
+# 自动重启会话
+# ==========================================
+echo ""
+warning "准备结束当前 Niri 会话..."
+for i in {3..1}; do
+    echo -ne "将在 $i 秒后退出，请准备...\r"
+    sleep 1
+done
+echo ""
+
+niri msg action quit
