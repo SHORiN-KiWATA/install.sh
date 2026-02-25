@@ -101,7 +101,7 @@ EOF
 build_niri() {
     if ! command -v cargo &> /dev/null; then
         warning "未检测到 rust/cargo，正在通过 pacman 安装..."
-        sudo pacman -S --needed --noconfirm cargo rust git
+        sudo pacman -S --needed --noconfirm cargo rust git clang
     fi
 
     mkdir -p "$CACHE_DIR"
