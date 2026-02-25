@@ -3,8 +3,6 @@
 # GRUB Theme Switcher & Themes Installer
 # ==============================================================================
 
-[ "$EUID" -ne 0 ] && echo "CRITICAL ERROR: Please run this installer as root (e.g., sudo bash install.sh)." && exit 1
-
 # --- Colors & Styles ---
 NC='\033[0m'
 BOLD='\033[1m'
@@ -13,6 +11,23 @@ H_YELLOW='\033[1;33m'
 H_PURPLE='\033[1;35m'
 H_CYAN='\033[1;36m'
 H_RED='\033[1;31m'
+
+# ------------------------------------------------------------------------------
+# 0. Root Check & Auto-Elevation
+# ------------------------------------------------------------------------------
+if [ "$EUID" -ne 0 ]; then
+    # 如果脚本是以实体文件运行的，则自动寻求 sudo 权限重新执行
+    if [ -f "$0" ]; then
+        echo -e " ${H_YELLOW}⚠${NC} This script requires root privileges. Requesting via sudo..."
+        exec sudo bash "$0" "$@"
+    else
+        # 如果脚本是通过 curl | bash 管道运行的，则提示正确的命令
+        echo -e "\n ${H_RED}✘${NC} Root privileges required!"
+        echo -e "   If you are piping this script via curl, please use ${H_CYAN}sudo bash${NC} instead of just ${H_CYAN}bash${NC}."
+        echo -e "   Example: ${H_CYAN}curl -sL https://shorin.xyz/grub | sudo bash${NC}\n"
+        exit 1
+    fi
+fi
 
 echo -e "\n${H_PURPLE}╭────────────────────────────────────────────────────────╮${NC}"
 echo -e "${H_PURPLE}│${NC}   ${BOLD}${H_CYAN}GRUB Theme Switcher Installer${NC}"
