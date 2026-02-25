@@ -27,7 +27,7 @@ COMMAND="${1:-toggle}"
 
 # 动态检测 quicksave 是否存在且可执行
 HAS_QUICKSAVE=false
-if [[ -x "$QUICKSAVE_BIN" ]] && command -v snapper ; then
+if [[ -x "$QUICKSAVE_BIN" ]] && command -v snapper &>/dev/null ; then
     HAS_QUICKSAVE=true
 fi
 
