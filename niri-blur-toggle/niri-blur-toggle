@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 
 # 开启 Bash 严格模式
+# -e: 遇到非0返回值立即退出
+# -u: 遇到未定义变量报错并退出
+# -o pipefail: 管道中任意命令失败则整条管道返回失败
 set -euo pipefail
+
+# ==========================================
+# 脚本功能：Niri 测试版 (Blur) 与正式版热切换工具
+# 设计架构：利用 FHS 规范，将编译产物放置于 /usr/local/bin。
+# 该目录在 $PATH 中优先级高于 /usr/bin，从而实现无损覆盖。
+# 移除 /usr/local/bin/niri 即可瞬间回退至 pacman 管理的稳定版。
+# 包含自动配置注入、撤销，以及 Btrfs 自动快照。
+# ==========================================
 
 # ==========================================
 # 全局变量定义
 # ==========================================
-NIRI_BIN="/usr/bin/niri"
-NIRI_BAK="/usr/bin/niri.bak"
+NIRI_LOCAL_BIN="/usr/local/bin/niri"
 REPO_URL="https://github.com/niri-wm/niri.git"
 BRANCH="wip/branch"
 QUICKSAVE_BIN="${HOME}/.local/bin/quicksave"
@@ -70,7 +80,7 @@ add_blur_config() {
 ${MARKER_START}
 blur {
     passes 3
-    offset 2
+    offset 3
     noise 0.02
     saturation 1.5
 }
@@ -109,14 +119,10 @@ build_niri() {
         info "发现已有源码缓存，正在检查上游更新..."
         cd "$BUILD_DIR"
         
-        # 获取本地当前的 Commit Hash
         LOCAL_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "none")
-        
-        # 拉取远程最新状态
         git fetch origin "$BRANCH"
         REMOTE_COMMIT=$(git rev-parse origin/"$BRANCH")
         
-        # 核心逻辑：如果远程与本地 Hash 一致，且编译产物还在，则直接跳过编译！
         if [[ "$LOCAL_COMMIT" == "$REMOTE_COMMIT" && -f "./target/release/niri" ]]; then
             success "上游源码无更新，且本地二进制文件完好，直接复用跳过编译！"
             return 0
@@ -139,10 +145,28 @@ build_niri() {
 }
 
 # ==========================================
+# 旧版遗留状态无缝迁移 (Legacy Migration)
+# ==========================================
+# 如果检测到旧版的 .bak 文件，说明用户正处于旧版架构的测试状态中。
+# 我们在静默状态下执行架构升级。
+LEGACY_BAK="/usr/bin/niri.bak"
+LEGACY_BIN="/usr/bin/niri"
+
+if [[ -f "$LEGACY_BAK" ]]; then
+    info "检测到旧版脚本遗留的系统级状态，正在执行无感迁移..."
+    # 将旧版放置在系统目录的测试版转移至优先权更高的 local 目录
+    sudo mv "$LEGACY_BIN" "$NIRI_LOCAL_BIN"
+    # 将系统包管理器原有的稳定版物归原主
+    sudo mv "$LEGACY_BAK" "$LEGACY_BIN"
+    success "系统遗留状态已修复，平滑迁移至新版 FHS 架构！"
+    # 迁移完成后，当前系统状态等同于新版的 BLUR_TEST 状态，后续逻辑直接接管
+fi
+
+# ==========================================
 # 主流程：Update 模式
 # ==========================================
 if [[ "$COMMAND" == "update" ]]; then
-    if [[ ! -f "$NIRI_BAK" ]]; then
+    if [[ ! -f "$NIRI_LOCAL_BIN" ]]; then
         error "当前系统处于正式版状态。请直接运行不带参数的脚本进行 Toggle 切换。"
     fi
 
@@ -163,19 +187,17 @@ if [[ "$COMMAND" == "update" ]]; then
         "$QUICKSAVE_BIN" -d "quicksave-niri-blur-toggle-update"
     fi
 
-    # 调用智能编译函数
     build_niri
 
-    info "替换二进制文件中..."
-    sudo rm -f "$NIRI_BIN"
-    sudo cp ./target/release/niri "$NIRI_BIN"
+    info "更新本地二进制文件..."
+    sudo cp ./target/release/niri "$NIRI_LOCAL_BIN"
     success "Blur 测试版更新完成！"
 
 # ==========================================
 # 主流程：Toggle 切换模式
 # ==========================================
 else
-    if [[ -f "$NIRI_BAK" ]]; then
+    if [[ -f "$NIRI_LOCAL_BIN" ]]; then
         CURRENT_STATE="BLUR_TEST"
     else
         CURRENT_STATE="STABLE"
@@ -187,13 +209,12 @@ else
 
     bold "即将执行以下操作："
     
-    # 动态显示 quicksave 步骤
     if [[ "$HAS_QUICKSAVE" == true ]]; then
         echo "  0. [快照] 运行 quicksave 创建 Btrfs 系统快照"
     fi
 
     if [[ "$CURRENT_STATE" == "BLUR_TEST" ]]; then
-        echo "  1. [恢复] 从备份还原官方正式版 Niri"
+        echo "  1. [恢复] 移除本地编译版本，自动回退至 pacman 官方正式版"
         echo "  2. [清理] 移除 Blur 规则 (已自动保存当前参数)"
     else
         echo "  1. [检查] 获取最新 wip/branch 源码，智能跳过或执行编译"
@@ -201,7 +222,7 @@ else
     fi
 
     echo ""
-    echo -e "\e[1;41;37m ⚠️ 警告 \e[0m"
+    echo -e "\e[1;41;37m [ 警告 ] \e[0m"
     echo -e "\e[1;31m操作完成后，脚本将立刻向 Niri 发送退出指令！\e[0m"
     echo -e "\e[1;31m所有未保存的工作将丢失，请确保已保存重要文件。\e[0m"
     echo ""
@@ -215,26 +236,22 @@ else
     echo ""
     info "开始执行操作..."
 
-    # 执行 quicksave
     if [[ "$HAS_QUICKSAVE" == true ]]; then
         info "运行 quicksave 创建 Btrfs 快照..."
         "$QUICKSAVE_BIN" -d "quicksave-niri-blur-toggle"
     fi
 
     if [[ "$CURRENT_STATE" == "BLUR_TEST" ]]; then
-        # 恢复正式版
-        sudo mv "$NIRI_BAK" "$NIRI_BIN"
+        sudo rm -f "$NIRI_LOCAL_BIN"
         remove_blur_config
         success "官方正式版恢复完成！"
         warning "请记得手动修改 config.kdl 以调整壁纸模糊相关的启动项。"
     else
-        # 安装测试版
         build_niri
-        info "替换二进制文件中..."
-        sudo mv "$NIRI_BIN" "$NIRI_BAK"
-        sudo cp ./target/release/niri "$NIRI_BIN"
+        info "部署编译后的二进制文件..."
+        sudo cp ./target/release/niri "$NIRI_LOCAL_BIN"
         add_blur_config
-        success "Blur 测试版替换并安装完成！"
+        success "Blur 测试版部署完成！"
         warning "请记得手动修改 config.kdl 以调整壁纸模糊相关的启动项。"
     fi
 fi
