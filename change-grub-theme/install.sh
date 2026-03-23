@@ -37,7 +37,7 @@ echo -e "${H_PURPLE}╰───────────────────
 # 1. Download and Install the Switcher Script
 # ------------------------------------------------------------------------------
 echo -e " ${H_CYAN}➜${NC} Downloading 'change-grub-theme' script..."
-SCRIPT_URL="https://raw.githubusercontent.com/SHORiN-KiWATA/shorin-arch-setup/refs/heads/main/resources/change-grub-theme"
+SCRIPT_URL="https://raw.githubusercontent.com/SHORiN-KiWATA/shorin-contrib/refs/heads/main/theme/change-grub-theme"
 BIN_PATH="/usr/local/bin/change-grub-theme"
 
 if curl -sL "$SCRIPT_URL" -o "$BIN_PATH"; then
@@ -86,7 +86,7 @@ else
     else
         echo -e " ${H_RED}✘${NC} Failed to clone the repository."
     fi
-
+    
     # Clean up the temporary directory
     [ -n "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"
     echo -e " ${H_GREEN}✔${NC} Temporary files cleaned up."
