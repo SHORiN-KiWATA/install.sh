@@ -63,7 +63,9 @@ else
     
     # Use --depth 1 to make the clone extremely fast since we only need files, not history
     if git clone --depth 1 "https://github.com/SHORiN-KiWATA/shorin-arch-setup.git" "$TEMP_DIR" >/dev/null 2>&1; then
-        DEST_DIR="/boot/grub/themes"
+        
+        # 【核心修改点】将目标目录改为系统级标准存放路径
+        DEST_DIR="/usr/share/grub/themes"
         mkdir -p "$DEST_DIR"
         
         echo -e " ${H_CYAN}➜${NC} Installing themes to $DEST_DIR..."
