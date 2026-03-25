@@ -154,6 +154,16 @@ window-rule {
         blur true
     }
 }
+// fuzzle专属的layer规则
+layer-rule {
+    match namespace="^launcher$"
+    geometry-corner-radius 8
+    background-effect {
+        xray false
+	blur true
+    }
+}
+// 不要删除下面这一行注释
 ${MARKER_END}
 EOF
         fi
@@ -171,7 +181,7 @@ build_niri() {
         warning "未检测到 rust/cargo，正在通过 pacman 安装..."
         sudo pacman -S --needed --noconfirm cargo rust git clang
     fi
-
+    
     mkdir -p "$CACHE_DIR"
     if [[ -d "$BUILD_DIR" ]]; then
         info "发现已有源码缓存，同步上游状态..."
@@ -193,10 +203,10 @@ build_niri() {
         git clone -b "$BRANCH" "$REPO_URL" "$BUILD_DIR" >/dev/null 2>&1
         cd "$BUILD_DIR"
     fi
-
+    
     info "开始执行 cargo build --release (需要些许时间)..."
     cargo build --release
-
+    
     if [[ ! -f "./target/release/niri" ]]; then
         echo ""
         error "编译过程遭遇异常，未找到可执行文件！"
@@ -236,29 +246,29 @@ case "${COMMAND,,}" in
             error "已经是 Blur 测试版状态，如需更新请使用 update 命令。"
         fi
         ACTION="INSTALL"
-        ;;
+    ;;
     remove)
         if [[ "$CURRENT_STATE" == "STABLE" ]]; then
             error "当前已经是官方正式版状态，无需执行移除。"
         fi
         ACTION="REMOVE"
-        ;;
+    ;;
     update)
         if [[ "$CURRENT_STATE" == "STABLE" ]]; then
             error "当前系统处于正式版状态，请先使用 install 切换至测试版。"
         fi
         ACTION="UPDATE"
-        ;;
+    ;;
     toggle|"")
         if [[ "$CURRENT_STATE" == "BLUR_TEST" ]]; then
             ACTION="REMOVE"
         else
             ACTION="INSTALL"
         fi
-        ;;
+    ;;
     *)
         error "未知参数: $COMMAND. 请使用 -h 查看支持的参数列表。"
-        ;;
+    ;;
 esac
 
 # ==========================================
@@ -267,9 +277,9 @@ esac
 echo -e "\n\e[1;36m====================================================\e[0m"
 if [[ "$ACTION" == "INSTALL" ]]; then
     bold "  Niri 测试版安装向导 (wip/branch)"
-elif [[ "$ACTION" == "REMOVE" ]]; then
+    elif [[ "$ACTION" == "REMOVE" ]]; then
     bold "  Niri 测试版卸载工具 (恢复官方版)"
-elif [[ "$ACTION" == "UPDATE" ]]; then
+    elif [[ "$ACTION" == "UPDATE" ]]; then
     bold "  Niri 测试版热更新 (wip/branch)"
 fi
 echo -e "\e[1;36m====================================================\e[0m\n"
@@ -283,10 +293,10 @@ fi
 if [[ "$ACTION" == "INSTALL" ]]; then
     echo "  1. [检查] 获取最新代码，执行编译 (或复用缓存)"
     echo "  2. [配置] 接管 Systemd 启动，注入 Blur 规则"
-elif [[ "$ACTION" == "REMOVE" ]]; then
+    elif [[ "$ACTION" == "REMOVE" ]]; then
     echo "  1. [恢复] 移除本地编译产物与 Systemd 接管配置"
     echo "  2. [清理] 清理 Blur 规则 (自动备份历史参数)"
-elif [[ "$ACTION" == "UPDATE" ]]; then
+    elif [[ "$ACTION" == "UPDATE" ]]; then
     echo "  1. [更新] 拉取最新源码并重新编译"
     echo "  2. [部署] 替换已有的测试版二进制文件"
 fi
@@ -332,8 +342,8 @@ if [[ "$ACTION" == "INSTALL" ]]; then
     echo ""
     success "安装流程全部完成！"
     warning "请在重启后检查 config.kdl 中的壁纸模糊相关参数。"
-
-elif [[ "$ACTION" == "REMOVE" ]]; then
+    
+    elif [[ "$ACTION" == "REMOVE" ]]; then
     echo ""
     info "正在移除测试版二进制文件..."
     sudo rm -f "$NIRI_LOCAL_BIN"
@@ -344,8 +354,8 @@ elif [[ "$ACTION" == "REMOVE" ]]; then
     
     echo ""
     success "系统已安全回退至官方稳定版！"
-
-elif [[ "$ACTION" == "UPDATE" ]]; then
+    
+    elif [[ "$ACTION" == "UPDATE" ]]; then
     build_niri
     
     echo ""
