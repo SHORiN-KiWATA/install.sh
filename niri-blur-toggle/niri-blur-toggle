@@ -146,11 +146,11 @@ window-rule {
         blur true
     }
 }
-// 浮动窗口禁用xray，实时渲染模糊效果。否则浮动窗口会无视底下的其他窗口内容，直接显示透视到桌面壁纸。看个人喜好选择禁用与否吧。
 window-rule {
     match is-floating=true
     background-effect {
-        xray false
+        // 将此处的xray改成false可以实时渲染浮动窗口背后的模糊，但在某些情况下会导致严重的显卡3d性能损耗。
+        xray true
         blur true
     }
 }
@@ -159,7 +159,7 @@ layer-rule {
     match namespace="^launcher$"
     geometry-corner-radius 8
     background-effect {
-        xray false
+        xray true
 	blur true
     }
 }
