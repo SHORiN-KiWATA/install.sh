@@ -177,9 +177,13 @@ EOF
 build_niri() {
     echo ""
     info "进入智能编译流程..."
-    if ! command -v cargo &> /dev/null; then
+    if ! pacman -Qq clang cargo &> /dev/null; then
         warning "未检测到 rust/cargo，正在通过 pacman 安装..."
         sudo pacman -S --needed --noconfirm cargo rust git clang
+    fi
+    if ! pacman -Qq git &> /dev/null; then
+        warning "未检测到 git，正在通过 pacman 安装..."
+        sudo pacman -S --needed --noconfirm git
     fi
     
     mkdir -p "$CACHE_DIR"
